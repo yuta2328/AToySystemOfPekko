@@ -1,4 +1,4 @@
-# Pekko-EC
+# A toy system of Pekko
 
 A toy of EC site in Scala and Pekko.
 This project is to learn how to use Pekko, event-sourcing, and a REST API.
