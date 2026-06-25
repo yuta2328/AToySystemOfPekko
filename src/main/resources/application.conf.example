@@ -1,0 +1,83 @@
+# Example configuration file for Pekko EC
+# Copy this file to application.conf and update the values
+
+pekko {
+  loglevel = "INFO"
+
+  actor {
+    provider = "local"
+
+    serializers {
+      jackson-json = "org.apache.pekko.serialization.jackson.JacksonJsonSerializer"
+    }
+
+    serialization-bindings {
+      "org.apache.pekko.persistence.typed.state.scaladsl.DurableStateStoreBehavior" = jackson-json
+    }
+  }
+
+  persistence {
+    journal {
+      plugin = "jdbc-journal"
+      auto-start-journals = ["jdbc-journal"]
+    }
+
+    snapshot-store {
+      plugin = "jdbc-snapshot-store"
+      auto-start-snapshot-stores = ["jdbc-snapshot-store"]
+    }
+  }
+
+  http {
+    server {
+      idle-timeout = 60 s
+      request-timeout = 30 s
+      bind-timeout = 1s
+    }
+  }
+}
+
+# JWT Authentication Configuration
+jwt {
+  # IMPORTANT: Generate a secure random secret for production!
+  # Use: openssl rand -base64 64
+  # Best practice: Use environment variable JWT_SECRET instead of hardcoding
+  secret = ${?JWT_SECRET}
+  secret = "GENERATE_YOUR_OWN_SECRET_HERE"
+
+  # Token expiration time in seconds (default: 24 hours)
+  expiration-seconds = 86400
+  expiration-seconds = ${?JWT_EXPIRATION_SECONDS}
+
+  # JWT issuer identifier
+  issuer = "pekko-ec"
+  issuer = ${?JWT_ISSUER}
+
+  # Algorithm used for signing (HS256, HS384, HS512)
+  algorithm = "HS256"
+}
+
+jdbc-journal {
+  slick = ${slick}
+}
+
+jdbc-snapshot-store {
+  slick = ${slick}
+}
+
+jdbc-read-journal {
+  slick = ${slick}
+}
+
+slick {
+  profile = "slick.jdbc.H2Profile$"
+  db {
+    url = "jdbc:h2:file:./data/pekko-ec-db;DB_CLOSE_DELAY=-1"
+    driver = "org.h2.Driver"
+    user = "sa"
+    password = ""
+    numThreads = 5
+    maxConnections = 5
+    minConnections = 1
+  }
+}
