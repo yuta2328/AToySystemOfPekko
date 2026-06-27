@@ -37,7 +37,7 @@ case class Item(itemId: String, name: String, price: Price, manager: ItemManager
 
 // Models for managing stock
 
-case class Stock(stockId: String, item: Item, count: Count, registered: LocalDateTime, lastUpdated: LocalDateTime) {
+case class Stock(stockId: String, item: Item, count: Count, itemManager: ItemManager, registered: LocalDateTime, lastUpdated: LocalDateTime) {
   def isInStock(thatCount: Count): Boolean = thatCount <= count
 
   def choose(thatCount: Count): Either[String, Stock] =
@@ -46,7 +46,9 @@ case class Stock(stockId: String, item: Item, count: Count, registered: LocalDat
   def add(thatCount: Count): Stock = copy(count = count + thatCount)
 }
 
-case class StockList(stockList: List[Stock], manager: ItemManager) {
+case class StockList(stockList: List[Stock], itemManager: ItemManager) {
+  def apply(itemManager: ItemManager) = StockList(List(), itemManager)
+
   private def pick(stockId: String): Either[String, Stock] = {
     stockList.filter(_.stockId == stockId).headOption match {
       case None        => Left("Not found")
@@ -61,7 +63,7 @@ case class StockList(stockList: List[Stock], manager: ItemManager) {
 
   def addNewStock(stock: Stock): Either[String, StockList] = {
     if stockList.exists(_.stockId == stock.stockId) then Left("The id of new stock already exists")
-    else Right(StockList(stock :: stockList, manager))
+    else Right(StockList(stock :: stockList, itemManager))
   }
 
   def choose(stockId: String, count: Count): Either[String, (Stock, StockList)] = {
@@ -70,17 +72,9 @@ case class StockList(stockList: List[Stock], manager: ItemManager) {
 
   def isInStock(stockId: String, count: Count): Either[String, Boolean] =
     pick(stockId).flatMap(s => Right(s.isInStock(count)))
-
-  // def evalEvent(event: StockListEvent): Either[String, StockList] = {
-  //   event match {
-  //     case AddingNewStock(stock) => addNewStock(stock)
-  //     case IncreaseStock(stockId, count) => 
-  //     case DecreaseStock(stockId, count) =>
-  //   }
-  // }
 }
 
-// Models for recommending
+// Models for recommendation
 case class RecommendedItems(itemList: List[Item], user: User)
 
 // Models for ordering
@@ -144,6 +138,7 @@ case class OrderRecord(orderId: String, itemList: OrderedItemList, payment: Paym
 
 // Models for shopping cart
 case class ShoppingCart(selectedItems: List[OrderedItem], user: User) {
+  def add(orderedItem: OrderedItem): ShoppingCart = ShoppingCart(selectedItems :+ orderedItem, user)
   def select(indexList: List[Int]): ShoppingCart = {
     val selected = indexList.flatMap(i => if i >= 0 && i < selectedItems.length then Some(selectedItems(i)) else None)
     ShoppingCart(selected, user)

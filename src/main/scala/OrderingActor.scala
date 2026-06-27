@@ -6,7 +6,7 @@ import java.time.LocalDateTime
 object OrderingActor {
   sealed trait OrderingCommand
   case class GetOrderListCommand(user: User, replyTo: ActorRef[Either[User, List[OrderRecord]]]) extends OrderingCommand
-  case class AddOrderCommand(orderRecord, replyTo: ActorRef[Either[String, Unit]]) extends OrderingCommand
+  case class AddOrderCommand(orderRecord: OrderRecord, replyTo: ActorRef[Either[String, Unit]]) extends OrderingCommand
   case class GetShoppingCartCommand(user: User, replyTo: ActorRef[Either[String, ShoppingCart]]) extends OrderingCommand
   case class AddItemToShoppingCartCommand(user: User, orderedItem: OrderedItem, replyTo: ActorRef[Either[String, Unit]]) extends OrderingCommand
   case class DeleteItemFromShoppingCartCommand(user: User, index: Int, replyTo: ActorRef[Either[String, Unit]]) extends OrderingCommand
@@ -22,39 +22,39 @@ object OrderingActor {
   case class AddStock(stock: Stock) extends OrderingEvent
   case class UpdateStock(stock: Stock) extends OrderingEvent
 
-  case class State(stockListMap: Map[ItemManagerUser, StockList], orderMap: Map[User, List[OrderRecord]], shoppingCartMap: Map[User, ShoppingCart])
+  case class State(stockListMap: Map[ItemManager, StockList], orderMap: Map[User, List[OrderRecord]], shoppingCartMap: Map[User, ShoppingCart])
 
   private def eventHandler(state: State, event: OrderingEvent): State = {
     event match {
       case AddOrder(orderRecord) =>
-        state.copy(orderMap = state.orderMap + (orderRecord.user -> (state.orderMap.getOrElse(orderRecord.user, List()) :+ orderRecord)))
+        state.copy(orderMap = state.orderMap + (orderRecord.user -> (state.orderMap.getOrElse(orderRecord.user, Nil) :+ orderRecord)))
 
       case AddItemToShoppingCart(user, orderedItem) =>
-        val updatedCart = state.shoppingCartMap.getOrElse(user, ShoppingCart(user, List()))
-        val newCart = updatedCart.copy(items = updatedCart.items :+ orderedItem)
+        val updatedCart = state.shoppingCartMap.getOrElse(user, ShoppingCart(Nil, user))
+        val newCart = updatedCart.copy(selectedItems = updatedCart.selectedItems :+ orderedItem)
         state.copy(shoppingCartMap = state.shoppingCartMap + (user -> newCart))
 
       case DeleteItemFromShoppingCart(user, index) =>
-        val updatedCart = state.shoppingCartMap.getOrElse(user, ShoppingCart(user, List()))
-        if (index >= 0 && index < updatedCart.items.length) {
-          val newItems = updatedCart.items.patch(index, Nil, 1)
-          val newCart = updatedCart.copy(items = newItems)
+        val updatedCart = state.shoppingCartMap.getOrElse(user, ShoppingCart(Nil, user))
+        if (index >= 0 && index < updatedCart.selectedItems.length) {
+          val newSelectedItems = updatedCart.selectedItems.patch(index, Nil, 1)
+          val newCart = updatedCart.copy(selectedItems = newSelectedItems)
           state.copy(shoppingCartMap = state.shoppingCartMap + (user -> newCart))
         } else {
           state // No change if index is out of bounds
         }
 
       case AddStock(stock) =>
-        val itemManagerUser = stock.itemManagerUser
-        val updatedStockList = state.stockListMap.getOrElse(itemManagerUser, StockList(itemManagerUser, List()))
-        val newStockList = updatedStockList.copy(stocks = updatedStockList.stocks :+ stock)
-        state.copy(stockListMap = state.stockListMap + (itemManagerUser -> newStockList))
+        val itemManager = stock.itemManager
+        val updatedStockList = state.stockListMap.getOrElse(itemManager, StockList(Nil, itemManager))
+        val newStockList = updatedStockList.copy(stocks =  add)
+        state.copy(stockListMap = state.stockListMap + (itemManager -> newStockList))
 
       case UpdateStock(stock) =>
-        val itemManagerUser = stock.itemManagerUser
-        val updatedStockList = state.stockListMap.getOrElse(itemManagerUser, StockList(itemManagerUser, List()))
+        val itemManager = stock.itemManager
+        val updatedStockList = state.stockListMap.getOrElse(itemManager, StockList(itemManager, Nil))
         val newStocks = updatedStockList.stocks.map(s => if (s.itemId == stock.itemId) stock else s)
         val newStockList = updatedStockList.copy(stocks = newStocks)
-        state.copy(stockListMap = state.stockListMap + (itemManagerUser -> newStockList))
+        state.copy(stockListMap = state.stockListMap + (itemManager -> newStockList))
     }
 }

@@ -3,7 +3,6 @@ import org.apache.pekko.actor.typed.scaladsl.{ActorContext, Behaviors}
 import org.apache.pekko.persistence.typed.PersistenceId
 import org.apache.pekko.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
 import java.time.LocalDateTime
-import ActorUtils.*
 
 object UserActor {
   // Commands
@@ -35,7 +34,7 @@ object UserActor {
       case RegisterUser(name, password, replyTo) =>
         val userId = java.util.UUID.randomUUID().toString
         val user = User(userId, name, password)
-        val event = UserRegistered(user, now())
+        val event = UserRegistered(user, Utils.now())
         Effect.persist(event).thenReply(replyTo)(_ => Right(user))
     }
 

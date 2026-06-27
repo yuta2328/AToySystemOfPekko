@@ -1,4 +1,6 @@
 import java.util.UUID
+import java.time.LocalDateTime
+
 object Utils {
   def genId(): String = UUID.randomUUID().toString
   def forM[A, B](list: List[A], f: A => Either[B, A]): Either[B, List[A]] =
@@ -8,4 +10,5 @@ object Utils {
         result <- f(a)
       } yield result :: results
     }
+  def now() = LocalDateTime.now()
 }
