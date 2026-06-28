@@ -1,7 +1,6 @@
 import java.time.LocalDateTime
 import java.util.UUID
 
-// Primtives for models
 case class Price(value: Int) {
   def apply(value: Int): Either[String, Price] =
     if value < 0 then Left("Incorrect value of the price") else Right(Price(value))
@@ -24,16 +23,18 @@ case class Count(value: Int) {
 
   def +(that: Count) = Count(value + that.value)
 
-  def -:(that: Count): Either[String, Count] = if value < that.value then
-    Left("The left-side value is less than the right-side one")
-  else Right(Count(value - that.value))
+  def -:(that: Count): Either[String, Count] =
+    if value < that.value then
+      Left("The left-side value is less than the right-side one")
+    else Right(Count(value - that.value))
 }
 
 // End users and items
 case class User(userId: String, name: String, password: String)
+
 case class ItemManager(itemManagerId: String, name: String)
 
-case class Item(itemId: String, name: String, price: Price, manager: ItemManager)
+case class Item(itemId: String, name: String, price: Price)
 
 // Models for managing stock
 
@@ -46,56 +47,79 @@ case class Stock(stockId: String, item: Item, count: Count, itemManager: ItemMan
   def add(thatCount: Count): Stock = copy(count = count + thatCount)
 }
 
-case class StockList(stockList: List[Stock], itemManager: ItemManager) {
-  def apply(itemManager: ItemManager) = StockList(List(), itemManager)
-
-  private def pick(stockId: String): Either[String, Stock] = {
-    stockList.filter(_.stockId == stockId).headOption match {
-      case None        => Left("Not found")
-      case Some(stock) => Right(stock)
+case class ManagedStock(stockMap: Map[ItemManager, List[Stock]]) {
+  private def getRegisteredStockList(itemManager: ItemManager): Either[String, List[Stock]] =
+    stockMap.get(itemManager) match {
+      case None => Left("The item manager is not registered")
+      case Some(stockList) => Right(stockList)
     }
-  }
 
-  private def update(stock: Stock): Either[String, StockList] =
-    Utils
-      .forM(stockList, stockArg => if stockArg.stockId == stock.stockId then Right(stock) else Right(stockArg))
-      .flatMap(stockList1 => Right(copy(stockList = stockList1)))
+  def registerManager(itemManager: ItemManager): ManagedStock =
+    if stockMap.contains(itemManager) then this
+    else copy(stockMap = stockMap + (itemManager -> List()))
 
-  def addNewStock(stock: Stock): Either[String, StockList] = {
-    if stockList.exists(_.stockId == stock.stockId) then Left("The id of new stock already exists")
-    else Right(StockList(stock :: stockList, itemManager))
-  }
+  def addNewStock(itemManager: ItemManager, stock: Stock): Either[String, ManagedStock] =
+    getRegisteredStockList(itemManager).flatMap(stockList =>
+      if stockList.exists(_.stockId == stock.stockId) then Left("The id of new stock already exists")
+      else if !(stock.itemManager == itemManager) then Left("The item manager of the stock is not matched with the given one")
+      else Right(copy(stockMap = stockMap + (itemManager -> (stock :: stockList))))
+    )
 
-  def choose(stockId: String, count: Count): Either[String, (Stock, StockList)] = {
-    pick(stockId).flatMap(stock => stock.choose(count).flatMap(newStock => update(newStock).map((newStock, _))))
-  }
+  def choose(itemManager: ItemManager, itemId: String, count: Count): Either[String, (Stock, ManagedStock)] =
+    getRegisteredStockList(itemManager).flatMap(stockList =>
+      stockList.find(_.item.itemId == itemId) match {
+        case None => Left("The item is not found in the stock list of the item manager")
+        case Some(stock) =>
+          stock.choose(count).flatMap(newStock =>
+            updateStock(itemManager, newStock).map((newStock, _))
+          )
+      }
+    )
 
-  def isInStock(stockId: String, count: Count): Either[String, Boolean] =
-    pick(stockId).flatMap(s => Right(s.isInStock(count)))
+  def updateStock(itemManager: ItemManager, stock: Stock): Either[String, ManagedStock] =
+    getRegisteredStockList(itemManager).flatMap(stockList =>
+      if stockList.exists(_.stockId == stock.stockId) then
+        Right(copy(stockMap = stockMap + (itemManager -> stockList.map(s => if s.stockId == stock.stockId then stock else s))))
+      else Left("The stock is not found in the stock list of the item manager")
+    )
+
+  def isInStock(itemManager: ItemManager, itemId: String, count: Count): Either[String, Boolean] =
+    getRegisteredStockList(itemManager).map(stockList =>
+      stockList.find(_.item.itemId == itemId) match {
+        case None => false
+        case Some(stock) => stock.isInStock(count)
+      }
+    )
 }
 
 // Models for recommendation
-case class RecommendedItems(itemList: List[Item], user: User)
-
-// Models for ordering
-case class OrderInput(orderedItemList: OrderedItemList, payment: Payment, stockList: StockList)
-
-case class OrderOutput(orderRecord: OrderRecord, stockDiffList: StockDiffList)
-
-case class OrderedItem(item: Item, count: Count, stock: Stock) {
-  def apply(item: Item, count: Count, stock: Stock): Either[String, OrderedItem] = {
-    if !(item.itemId == stock.item.itemId) then Left("The item and the stock are not matched")
-    else Right(OrderedItem(item, count, stock))
-  }
-  def prices(): Price = item.price *! count
-  def isInStock(): Boolean = count <= stock.count
-  def stockDiff(): StockDiff = StockDiff(stock.stockId, count)
+trait RecommendationStrategy {
+  def recommend(user: User, managedStock: ManagedStock): Either[String, List[Stock]]
 }
 
+case class DummyRecommendationStrategy() extends RecommendationStrategy {
+  def recommend(user: User, managedStock: ManagedStock): Either[String, List[Stock]] = {
+    val stockList = managedStock.stockMap.values.flatten.toList
+    Right(stockList.take(10))
+  }
+}
+
+// Models for ordering
+case class OrderInput(orderedItemList: OrderedItemList, payment: Payment, managedStock: ManagedStock)
+
+case class OrderOutput(orderRecord: OrderRecord, managedStock: ManagedStock)
+
+case class OrderedItem(count: Count, stock: Stock) {
+  def prices(): Price = stock.item.price *! count
+}
+def construct(count: Count, stock: Stock): Either[String, OrderedItem] =
+  if count <= stock.count then Right(OrderedItem(count, stock))
+  else Left("The count of ordered item is more than the stock count")
+
 case class OrderedItemList(orderedItemList: List[OrderedItem]) {
+  def apply(countAndStockList: List[(Count, Stock)]): Either[String, OrderedItemList] =
+    Utils.forM(countAndStockList, { (count, stock) => construct(count, stock) }).flatMap(l => Right(OrderedItemList(l)))
   def prices(): Price = orderedItemList.foldLeft(zero)((acc, orderedItem) => acc + orderedItem.prices())
-  def isInStock(): Boolean = orderedItemList.forall(_.isInStock())
-  def stockDiffList(): StockDiffList = StockDiffList(orderedItemList.map(_.stockDiff()))
 }
 
 case class StockDiff(stockId: String, diffCount: Count)
@@ -142,6 +166,11 @@ case class ShoppingCart(selectedItems: List[OrderedItem], user: User) {
   def select(indexList: List[Int]): ShoppingCart = {
     val selected = indexList.flatMap(i => if i >= 0 && i < selectedItems.length then Some(selectedItems(i)) else None)
     ShoppingCart(selected, user)
+  }
+  def remove(index: Int): ShoppingCart = {
+    if index >= 0 && index < selectedItems.length then
+      ShoppingCart(selectedItems.patch(index, Nil, 1), user)
+    else this
   }
 }
 
